@@ -44,37 +44,104 @@
   </div>
 
   <script>
+    function hexToRgb(hex) {
+      const bigint = parseInt(hex, 16);
+      return {
+        r: ((bigint >> 16) & 255) / 255,
+        g: ((bigint >> 8) & 255) / 255,
+        b: (bigint & 255) / 255,
+      };
+    }
+
+    function rgbToHSL(r, g, b) {
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      let h = 0, s = 0, l = (max + min) / 2;
+      if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+          case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+          case g: h = (b - r) / d + 2; break;
+          case b: h = (r - g) / d + 4; break;
+        }
+        h *= 60;
+      }
+      return { h, s, l };
+    }
+
+    function getColorGroup(h, s, l) {
+      if (s < 0.1) return "Neutral";
+      if ((h >= 0 && h < 20) || h >= 340) return "Red";
+      if (h >= 20 && h < 45) return "Orange";
+      if (h >= 45 && h < 65) return "Yellow";
+      if (h >= 65 && h < 170) return "Green";
+      if (h >= 170 && h < 255) return "Blue";
+      if (h >= 255 && h < 290) return "Purple";
+      if (h >= 290 && h < 340) return "Pink";
+      return "Other";
+    }
+
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (msg.type === 'show-colors') {
+        const hexList = msg.colorHexes;
         const list = document.getElementById('colorList');
         list.innerHTML = '';
-        msg.colors.forEach(hex => {
-          const item = document.createElement('div');
-          item.className = 'color-item';
-          item.innerHTML = `
-            <input type="checkbox" class="color-checkbox" value="${hex}">
-            <div class="swatch" style="background-color: #${hex}"></div>
-            <span>#${hex}</span>
-          `;
-          list.appendChild(item);
+
+        const all = [];
+
+        hexList.forEach(hex => {
+          const { r, g, b } = hexToRgb(hex);
+          const { h, s, l } = rgbToHSL(r, g, b);
+          const group = getColorGroup(h, s, l);
+          all.push({ hex, group, l });
         });
 
-        // Reset select all
-        document.getElementById('selectAll').checked = false;
+        const grouped = new Map();
+        all.forEach(item => {
+          if (!grouped.has(item.group)) grouped.set(item.group, []);
+          grouped.get(item.group).push(item);
+        });
+
+        const final = [];
+
+        grouped.forEach((items, group) => {
+          items.sort((a, b) => b.l - a.l);
+          const total = items.length;
+          items.forEach((item, i) => {
+            const level = total === 1 ? 100 : (i + 1) * 100;
+            item.name = `${group} / ${level}`;
+            final.push(item);
+          });
+        });
+
+        final.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+        final.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'color-item';
+          div.innerHTML = `
+            <input type="checkbox" class="color-checkbox" value="${item.hex}" checked>
+            <div class="swatch" style="background-color: #${item.hex}"></div>
+            <span>${item.name} (#${item.hex.toUpperCase()})</span>
+          `;
+          list.appendChild(div);
+        });
+
+        document.getElementById('selectAll').checked = true;
       }
     };
 
     document.getElementById('selectAll').addEventListener('change', function () {
-      const checkboxes = document.querySelectorAll('.color-checkbox');
-      checkboxes.forEach(cb => cb.checked = this.checked);
+      const boxes = document.querySelectorAll('.color-checkbox');
+      boxes.forEach(cb => cb.checked = this.checked);
     });
 
     document.getElementById('generate').onclick = () => {
-      const checked = Array.from(document.querySelectorAll('.color-checkbox'))
+      const selected = Array.from(document.querySelectorAll('.color-checkbox'))
         .filter(cb => cb.checked)
         .map(cb => cb.value);
-      parent.postMessage({ pluginMessage: { type: 'generate-style', selectedColors: checked } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'generate-style', selectedColors: selected } }, '*');
     };
   </script>
 </body>
