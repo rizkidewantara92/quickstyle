@@ -1,37 +1,87 @@
-// This plugin will open a window to prompt the user to enter a number, and
-// it will then create that many rectangles on the screen.
+figma.showUI(__html__, { width: 320, height: 400 });
 
-// This file holds the main code for plugins. Code in this file has access to
-// the *figma document* via the figma global object.
-// You can access browser APIs in the <script> tag inside "ui.html" which has a
-// full browser environment (See https://www.figma.com/plugin-docs/how-plugins-run).
+if (figma.currentPage.selection.length === 0) {
+  figma.closePlugin("Please select at least one frame or shape");
+}
 
-// This shows the HTML page in "ui.html".
-figma.showUI(__html__);
+let allNodesToProcess: SceneNode[] = [];
+const hexCache = new Map<string, string>();
 
-// Calls to "parent.postMessage" from within the HTML page will trigger this
-// callback. The callback will be passed the "pluginMessage" property of the
-// posted message.
-figma.ui.onmessage =  (msg: {type: string, count: number}) => {
-  // One way of distinguishing between different types of messages sent from
-  // your HTML page is to use an object with a "type" property like this.
-  if (msg.type === 'create-shapes') {
-    // This plugin creates rectangles on the screen.
-    const numberOfRectangles = msg.count;
+// Ganti padStart dengan slice untuk dukungan ES5/ES6
+function rgbToHex(r: number, g: number, b: number): string {
+  return [r, g, b].map(v => {
+    const val = Math.round(Number(v) * 255);
+    const hex = val.toString(16);
+    return ('0' + hex).slice(-2); // fallback padStart
+  }).join('');
+}
 
-    const nodes: SceneNode[] = [];
-    for (let i = 0; i < numberOfRectangles; i++) {
-      const rect = figma.createRectangle();
-      rect.x = i * 150;
-      rect.fills = [{ type: 'SOLID', color: { r: 1, g: 0.5, b: 0 } }];
-      figma.currentPage.appendChild(rect);
-      nodes.push(rect);
-    }
-    figma.currentPage.selection = nodes;
-    figma.viewport.scrollAndZoomIntoView(nodes);
+// Traverse semua node yang visible, unlocked, dan bisa punya fill/stroke
+function collectShapesRecursively(node: SceneNode) {
+  if (!node.visible || node.locked) return;
+
+  if ("fills" in node || "strokes" in node) {
+    allNodesToProcess.push(node);
   }
 
-  // Make sure to close the plugin when you're done. Otherwise the plugin will
-  // keep running, which shows the cancel button at the bottom of the screen.
-  figma.closePlugin();
+  if ("children" in node) {
+    for (const child of node.children) {
+      collectShapesRecursively(child);
+    }
+  }
+}
+
+// Mulai dari selection
+for (const node of figma.currentPage.selection) {
+  collectShapesRecursively(node);
+}
+
+// Ambil semua warna unik (SOLID fill dan stroke) dalam bentuk HEX
+const colorMap = new Map<string, Paint>();
+
+for (const node of allNodesToProcess) {
+  if ("fills" in node && Array.isArray(node.fills)) {
+    node.fills.forEach(fill => {
+      if (fill.type === "SOLID") {
+        const hex = rgbToHex(fill.color.r, fill.color.g, fill.color.b);
+        colorMap.set(hex, fill);
+      }
+    });
+  }
+
+  if ("strokes" in node && Array.isArray(node.strokes)) {
+    node.strokes.forEach(stroke => {
+      if (stroke.type === "SOLID") {
+        const hex = rgbToHex(stroke.color.r, stroke.color.g, stroke.color.b);
+        colorMap.set(hex, stroke);
+      }
+    });
+  }
+}
+
+// Kirim list warna ke UI
+figma.ui.postMessage({
+  type: "show-colors",
+  colors: Array.from(colorMap.keys())
+});
+
+// Saat user klik generate style
+figma.ui.onmessage = (msg) => {
+  if (msg.type === "generate-style") {
+    const selectedHexes: string[] = msg.selectedColors;
+    let counter = 0;
+
+    selectedHexes.forEach(hex => {
+      const paint = colorMap.get(hex);
+      if (paint) {
+        const style = figma.createPaintStyle();
+        style.name = `Color/${hex.toUpperCase()}`;
+        style.description = `#${hex.toUpperCase()}`;
+        style.paints = [paint];
+        counter++;
+      }
+    });
+
+    figma.closePlugin(`🎉 ${counter} color styles generated!`);
+  }
 };

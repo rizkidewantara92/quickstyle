@@ -1,17 +1,81 @@
-<h2>Rectangle Creator</h2>
-<p>Count: <input id="count" type="number" value="5"></p>
-<button id="create">Create</button>
-<button id="cancel">Cancel</button>
-<script>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 16px;
+      font-size: 14px;
+    }
+    .color-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .swatch {
+      width: 20px;
+      height: 20px;
+      margin-right: 8px;
+      border: 1px solid #ccc;
+    }
+    .controls {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+    }
+    #colorList {
+      max-height: 240px;
+      overflow-y: auto;
+      margin-top: 8px;
+      border: 1px solid #eee;
+      padding: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h3>Select Colors to Generate Styles</h3>
+  <label><input type="checkbox" id="selectAll"> Select All</label>
 
-document.getElementById('create').onclick = () => {
-  const textbox = document.getElementById('count');
-  const count = parseInt(textbox.value, 10);
-  parent.postMessage({ pluginMessage: { type: 'create-shapes', count } }, '*')
-}
+  <div id="colorList"></div>
 
-document.getElementById('cancel').onclick = () => {
-  parent.postMessage({ pluginMessage: { type: 'cancel' } }, '*')
-}
+  <div class="controls">
+    <button id="generate">Generate Style</button>
+  </div>
 
-</script>
+  <script>
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (msg.type === 'show-colors') {
+        const list = document.getElementById('colorList');
+        list.innerHTML = '';
+        msg.colors.forEach(hex => {
+          const item = document.createElement('div');
+          item.className = 'color-item';
+          item.innerHTML = `
+            <input type="checkbox" class="color-checkbox" value="${hex}">
+            <div class="swatch" style="background-color: #${hex}"></div>
+            <span>#${hex}</span>
+          `;
+          list.appendChild(item);
+        });
+
+        // Reset select all
+        document.getElementById('selectAll').checked = false;
+      }
+    };
+
+    document.getElementById('selectAll').addEventListener('change', function () {
+      const checkboxes = document.querySelectorAll('.color-checkbox');
+      checkboxes.forEach(cb => cb.checked = this.checked);
+    });
+
+    document.getElementById('generate').onclick = () => {
+      const checked = Array.from(document.querySelectorAll('.color-checkbox'))
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
+      parent.postMessage({ pluginMessage: { type: 'generate-style', selectedColors: checked } }, '*');
+    };
+  </script>
+</body>
+</html>
